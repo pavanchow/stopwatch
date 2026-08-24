@@ -1,0 +1,17 @@
+[package]
+name = "stopwatch"
+version = "0.1.0"
+edition = "2021"
+description = "A small, readable profiler in Rust with deterministic timing"
+license = "MIT"
+
+[[bin]]
+name = "stopwatch"
+path = "src/main.rs"
+
+[lib]
+name = "stopwatch"
+path = "src/lib.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }

@@ -2,11 +2,595 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>stopwatch</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stopwatch: a profiler in Rust that shows where a program spent its life</title>
+<meta name="description" content="Stopwatch is a profiler in Rust, built from scratch, with a call tree of self time and total time. It renders a run as a chronomandala, a living bloom of where the time went. Try it live.">
+<meta name="author" content="Pavan Nallamothu (pavanchow)">
+<meta name="keywords" content="profiler in Rust, flame graph, call tree, self time, total time, sampling profiler, chronomandala, from scratch, Pavan Nallamothu, pavanchow">
+<link rel="canonical" href="https://pavanchow.github.io/stopwatch/">
+<link rel="author" href="https://github.com/pavanchow">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Stopwatch: a profiler in Rust that shows where a program spent its life">
+<meta property="og:description" content="A profiler in Rust built from scratch. It renders a run as a chronomandala, a living bloom of where the time went, and prints an epitaph for the hottest line.">
+<meta property="og:url" content="https://pavanchow.github.io/stopwatch/">
+<meta property="og:site_name" content="Stopwatch">
+<meta property="og:image" content="https://pavanchow.github.io/stopwatch/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Stopwatch: a profiler in Rust">
+<meta name="twitter:description" content="A profiler in Rust built from scratch. It renders a run as a chronomandala and prints an epitaph for the hottest line.">
+<meta name="twitter:image" content="https://pavanchow.github.io/stopwatch/og-image.png">
+
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Person","name":"Pavan Nallamothu","alternateName":"pavanchow","url":"https://github.com/pavanchow","sameAs":["https://github.com/pavanchow","https://hackerone.com/pavanchow"]}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Stopwatch","applicationCategory":"DeveloperApplication","operatingSystem":"Cross-platform","softwareVersion":"0.1.0","author":{"@type":"Person","name":"Pavan Nallamothu","url":"https://github.com/pavanchow"},"description":"A profiler in Rust built from scratch: a call tree with self time and total time, deterministic timing through an injected clock, and a chronomandala visualization of where the time went.","url":"https://pavanchow.github.io/stopwatch/","codeRepository":"https://github.com/pavanchow/stopwatch"}
+</script>
+
+<style>
+  :root{
+    --accent:#7c5cff;--accent-2:#ff5c8a;--accent-warm:#ffb020;
+    --ink:#15161c;--muted:#6a6d78;--faint:#9a9dab;
+    --line:#ececed;--panel:#f7f7f9;--panel2:#fbfbfd;
+    --night:#0b0b14;--night-2:#12121f;
+    --mono:ui-monospace,SFMono-Regular,Menlo,"SF Mono",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:#fff;color:var(--ink);
+    font:17px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 28px}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+
+  nav{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.82);backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid var(--line)}
+  nav .row{display:flex;justify-content:space-between;align-items:center;height:56px;max-width:1040px;margin:0 auto;padding:0 28px}
+  nav .brand{display:flex;align-items:center;gap:9px;font-size:18px;font-weight:650;letter-spacing:-.01em}
+  nav .brand .gem{width:16px;height:16px;transform:rotate(45deg);border-radius:3px;background:conic-gradient(from 45deg,#7c5cff,#ff5c8a,#ffb020,#7c5cff)}
+  nav .links{display:flex;gap:26px;align-items:center}
+  nav .links a{color:var(--ink);font-size:14.5px}
+  @media(max-width:640px){nav .links a:not(.gh){display:none}}
+
+  .hero{padding:72px 0 26px;text-align:center}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
+  h1{font-size:clamp(38px,6.6vw,66px);line-height:1.04;letter-spacing:-.035em;font-weight:680;margin:18px 0 0}
+  .hero p.sub{max-width:660px;margin:24px auto 0;font-size:clamp(17px,2.1vw,21px);color:var(--muted)}
+
+  .stage{max-width:1000px;margin:40px auto 0;padding:0 20px}
+  .mandala-card{position:relative;background:radial-gradient(120% 120% at 50% 0%,#141425 0%,#0b0b14 60%);border:1px solid #23233a;border-radius:24px;overflow:hidden;box-shadow:0 30px 80px -40px rgba(80,60,200,.6);padding:22px}
+  .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+  .seg{display:flex;gap:6px;background:#171728;border:1px solid #26264150;border-radius:980px;padding:4px}
+  .chip{cursor:pointer;border:none;background:transparent;color:#b9bad0;font-size:13px;font-family:var(--mono);padding:7px 14px;border-radius:980px;transition:.15s}
+  .chip:hover{color:#fff}
+  .chip.on{background:linear-gradient(120deg,#7c5cff,#ff5c8a);color:#fff}
+  .spacer{flex:1}
+  .toggle-view{display:flex;gap:6px;background:#171728;border:1px solid #26264150;border-radius:980px;padding:4px}
+  .replay{cursor:pointer;border:1px solid #33334f;background:#171728;color:#dcdcf2;font-size:13px;font-family:var(--mono);padding:8px 16px;border-radius:980px}
+  .replay:hover{border-color:var(--accent)}
+  .canvas-hold{position:relative;display:flex;justify-content:center}
+  canvas{display:block;width:100%;max-width:640px;height:auto;touch-action:none}
+  .center-label{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;width:210px}
+  .center-label .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:#6f6f92}
+  .center-label .v{font-size:20px;font-weight:650;color:#fff;margin-top:4px;letter-spacing:-.02em;word-break:break-word}
+  .center-label .s{font-family:var(--mono);font-size:11px;color:#9a9ac2;margin-top:4px}
+  .tip{position:absolute;pointer-events:none;background:rgba(10,10,20,.94);border:1px solid #33334f;border-radius:10px;padding:8px 11px;font-family:var(--mono);font-size:11.5px;color:#e8e8f6;opacity:0;transition:opacity .1s;white-space:nowrap;z-index:5}
+  .tip b{color:#fff}
+  .tip .hot{color:#ffb020}
+  .epitaph{margin-top:16px;text-align:center;font-size:16px;color:#c9c9e4;font-family:var(--mono)}
+  .epitaph b{color:#fff;font-weight:600}
+  .scrub-row{display:flex;align-items:center;gap:12px;margin-top:14px}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:4px;background:#26264a;outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:linear-gradient(120deg,#7c5cff,#ff5c8a);cursor:pointer;border:2px solid #0b0b14}
+  input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:#7c5cff;cursor:pointer;border:2px solid #0b0b14}
+  .scrub-row .t{font-family:var(--mono);font-size:11px;color:#8a8ab0;min-width:96px;text-align:right}
+  .legend{display:flex;gap:18px;justify-content:center;margin-top:14px;font-family:var(--mono);font-size:11px;color:#8a8ab0;flex-wrap:wrap}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .legend i{width:22px;height:9px;border-radius:3px;display:inline-block}
+
+  section{padding:92px 0;border-top:1px solid var(--line)}
+  h2{font-size:clamp(27px,4.2vw,42px);line-height:1.12;letter-spacing:-.025em;font-weight:660;text-align:center;max-width:780px;margin:0 auto}
+  .lead{max-width:640px;margin:22px auto 0;text-align:center;color:var(--muted);font-size:18px}
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:960px;margin:48px auto 0}
+  @media(max-width:760px){.steps{grid-template-columns:1fr}}
+  .step{background:var(--panel2);border:1px solid var(--line);border-radius:16px;padding:24px}
+  .step .n{display:inline-flex;width:28px;height:28px;border-radius:8px;background:#f0ecff;color:var(--accent);align-items:center;justify-content:center;font:700 13px var(--mono);margin-bottom:12px}
+  .step h3{font-size:17px;margin-bottom:6px}.step p{color:var(--muted);font-size:15px}
+  pre{background:#0b0b14;color:#e6e6f2;border-radius:14px;padding:20px 22px;font-family:var(--mono);font-size:13px;overflow-x:auto;max-width:720px;margin:34px auto 0;line-height:1.55}
+  pre .c{color:#7d7da0}
+  pre .k{color:#ff9ec4}
+  footer{padding:64px 0;border-top:1px solid var(--line);text-align:center;color:var(--muted)}
+  footer .name{color:var(--ink);font-weight:600}
+</style>
 </head>
 <body>
-<h1>stopwatch</h1>
-<p>Site coming soon.</p>
-<p><a href="https://github.com/pavanchow/stopwatch">View repository</a></p>
+  <nav><div class="row">
+    <div class="brand"><span class="gem"></span>Stopwatch</div>
+    <div class="links">
+      <a href="#demo">Demo</a><a href="#how">How it works</a><a href="#source">Source</a>
+      <a class="gh" href="https://github.com/pavanchow/stopwatch">GitHub</a>
+    </div>
+  </div></nav>
+
+  <div id="demo" class="hero">
+    <p class="eyebrow">Rust &middot; from scratch &middot; a call tree you can read</p>
+    <h1>See where a program<br>spent its life.</h1>
+    <p class="sub">Stopwatch is a profiler. It measures the time inside every function, separates a function's own work from time spent in its children, and blooms the whole run into a chronomandala. Pick a workload and watch the time unfold.</p>
+  </div>
+
+  <div class="stage">
+    <div class="mandala-card">
+      <div class="controls">
+        <div class="seg" id="workloads">
+          <button class="chip on" data-w="fib">fib</button>
+          <button class="chip" data-w="sort">sort</button>
+          <button class="chip" data-w="blur">blur</button>
+          <button class="chip" data-w="mixed">mixed</button>
+        </div>
+        <div class="spacer"></div>
+        <button class="replay" id="replay-btn">Replay the run</button>
+        <div class="toggle-view" id="views">
+          <button class="chip on" data-v="bloom">Bloom</button>
+          <button class="chip" data-v="flame">Flame</button>
+        </div>
+      </div>
+
+      <div class="canvas-hold">
+        <canvas id="c" width="1280" height="1280"></canvas>
+        <div class="center-label" id="center">
+          <div class="k">hottest</div>
+          <div class="v" id="center-name">&mdash;</div>
+          <div class="s" id="center-sub"></div>
+        </div>
+        <div class="tip" id="tip"></div>
+      </div>
+
+      <div class="scrub-row">
+        <input type="range" id="scrub" min="0" max="1000" value="1000">
+        <div class="t" id="scrub-t">full run</div>
+      </div>
+
+      <div class="legend">
+        <span><i style="background:linear-gradient(90deg,#3a6bd6,#8a5cff)"></i> waits on children (cold)</span>
+        <span><i style="background:linear-gradient(90deg,#ff5c8a,#ffb020)"></i> its own work (hot)</span>
+        <span><i style="background:#2a2a44"></i> ring depth = call depth</span>
+      </div>
+
+      <div class="epitaph" id="epitaph">&nbsp;</div>
+    </div>
+  </div>
+
+  <section id="how">
+    <h2>The same profiler, two clocks</h2>
+    <p class="lead">Timing is usually the flaky part of a profiler, because wall-clock noise makes small runs unrepeatable. Stopwatch injects the clock. The Rust binary reads the system clock, and the demo above uses a clock that counts units of work, so the bloom is exactly reproducible. Everything else is identical.</p>
+    <div class="steps">
+      <div class="step"><span class="n">1</span><h3>Enter and exit</h3><p>Every span records the time on the way in and on the way out. Spans nest, so the profiler always knows which function is running and who called it.</p></div>
+      <div class="step"><span class="n">2</span><h3>Self vs total</h3><p>Total time is everything between enter and exit. Self time subtracts the time spent inside children, so a function that only calls others shows almost no self time. That difference is the whole game.</p></div>
+      <div class="step"><span class="n">3</span><h3>The bloom</h3><p>Each function becomes an arc. Its sweep is its share of total time, its ring is its call depth, and its color runs from cold blue (waiting on children) to hot orange (its own work). Hot leaves glow.</p></div>
+    </div>
+    <pre><span class="c">// self time is computed per activation, never guessed</span>
+<span class="k">fn</span> exit(&mut self) {
+    <span class="k">let</span> elapsed = self.clock.now_nanos() - frame.start;
+    node.total_nanos += elapsed;
+    node.self_nanos  += elapsed - frame.children_nanos;
+    parent.children_nanos += elapsed;
+}</pre>
+  </section>
+
+  <section id="source">
+    <h2>Read the source, not just the numbers</h2>
+    <p class="lead">The CLI runs real workloads under the system clock and prints an indented call tree with total time, self time, and percent, then names the line where the program spent most of its life.</p>
+    <pre>cargo run -- run --workload sort
+cargo run -- run --workload mixed --json   <span class="c"># the same tree the bloom reads</span></pre>
+  </section>
+
+  <noscript>
+    Stopwatch is a profiler in Rust built from scratch: a call tree with self time and total time, deterministic timing through an injected clock, a text report, a JSON export, and an epitaph naming the hottest function. The live chronomandala demo on this page requires JavaScript. By Pavan Nallamothu (pavanchow).
+  </noscript>
+
+  <footer>
+    <div class="wrap">
+      By <span class="name">Pavan Nallamothu (pavanchow)</span> &middot;
+      <a href="https://github.com/pavanchow/stopwatch">github.com/pavanchow/stopwatch</a>
+    </div>
+  </footer>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- the profiler, ported from profiler.rs ----------
+  // The clock here counts work units instead of nanoseconds. Same tree, same
+  // self-vs-total accounting, just a deterministic clock so the bloom repeats.
+  function Profiler(){
+    this.clock = 0;
+    this.arena = [{ name:"root", calls:0, total:0, self:0, children:[], start:0, end:0, depth:0, order:-1 }];
+    this.stack = [{ idx:0, start:0, childElapsed:0 }];
+    this.order = 0;
+  }
+  Profiler.prototype.tick = function(n){ this.clock += (n===undefined?1:n); };
+  Profiler.prototype.enter = function(name){
+    var top = this.stack[this.stack.length-1];
+    var parent = this.arena[top.idx];
+    var idx = -1;
+    for (var i=0;i<parent.children.length;i++){
+      if (this.arena[parent.children[i]].name === name){ idx = parent.children[i]; break; }
+    }
+    if (idx === -1){
+      idx = this.arena.length;
+      this.arena.push({ name:name, calls:0, total:0, self:0, children:[], start:this.clock, end:this.clock, depth:parent.depth+1, order:this.order++ });
+      parent.children.push(idx);
+    }
+    this.stack.push({ idx:idx, start:this.clock, childElapsed:0 });
+  };
+  Profiler.prototype.exit = function(){
+    var frame = this.stack.pop();
+    var node = this.arena[frame.idx];
+    var elapsed = this.clock - frame.start;
+    node.total += elapsed;
+    node.self  += (elapsed - frame.childElapsed);
+    node.calls += 1;
+    if (this.clock > node.end) node.end = this.clock;
+    var parent = this.stack[this.stack.length-1];
+    parent.childElapsed += elapsed;
+  };
+  Profiler.prototype.finish = function(){
+    var root = this.arena[0];
+    root.total = this.clock; root.end = this.clock;
+    return this.arena;
+  };
+
+  // ---------- workloads, each instrumented with spans ----------
+  // A tiny linear-congruential generator so the data is fixed every run.
+  function lcg(seed){ var s = seed>>>0; return function(){ s = (1103515245*s + 12345) & 0x7fffffff; return s; }; }
+
+  function runFib(p){
+    function fib(n){
+      p.enter("fib"); p.tick();
+      var r;
+      if (n < 2){ r = n; } else { r = fib(n-1) + fib(n-2); }
+      p.exit();
+      return r;
+    }
+    fib(18);
+  }
+
+  function runSort(p){
+    p.enter("sort");
+    var rnd = lcg(7);
+    var a = []; for (var i=0;i<90;i++) a.push(rnd()%1000);
+    var b = a.slice();
+
+    p.enter("bubble_sort");
+    for (var x=0;x<b.length;x++){
+      for (var y=0;y<b.length-1-x;y++){
+        p.tick();
+        if (b[y] > b[y+1]){ var t=b[y]; b[y]=b[y+1]; b[y+1]=t; p.tick(); }
+      }
+    }
+    p.exit();
+
+    function partition(arr, lo, hi){
+      p.enter("partition");
+      var pivot = arr[hi], i = lo-1;
+      for (var j=lo;j<hi;j++){ p.tick(); if (arr[j] <= pivot){ i++; var t=arr[i]; arr[i]=arr[j]; arr[j]=t; } }
+      var t2=arr[i+1]; arr[i+1]=arr[hi]; arr[hi]=t2;
+      p.exit();
+      return i+1;
+    }
+    function quick(arr, lo, hi){
+      p.enter("quick_sort");
+      if (lo < hi){ var pi = partition(arr, lo, hi); quick(arr, lo, pi-1); quick(arr, pi+1, hi); }
+      p.exit();
+    }
+    quick(a, 0, a.length-1);
+    p.exit();
+  }
+
+  function runBlur(p){
+    p.enter("blur");
+    var w=42, h=42, buf=[]; var rnd=lcg(3);
+    for (var i=0;i<w*h;i++) buf.push(rnd()%256);
+    var tmp = buf.slice();
+    p.enter("horizontal_pass");
+    for (var y=0;y<h;y++) for (var x=0;x<w;x++){
+      var s=0,c=0;
+      for (var k=-2;k<=2;k++){ var xx=x+k; if (xx>=0&&xx<w){ s+=buf[y*w+xx]; c++; p.tick(); } }
+      tmp[y*w+x]=s/c;
+    }
+    p.exit();
+    p.enter("vertical_pass");
+    for (var y2=0;y2<h;y2++) for (var x2=0;x2<w;x2++){
+      var s2=0,c2=0;
+      for (var k2=-2;k2<=2;k2++){ var yy=y2+k2; if (yy>=0&&yy<h){ s2+=tmp[yy*w+x2]; c2++; p.tick(); } }
+      buf[y2*w+x2]=s2/c2;
+    }
+    p.exit();
+    p.exit();
+  }
+
+  function runMixed(p){
+    p.enter("mixed");
+    runFib(p); runSort(p); runBlur(p);
+    p.exit();
+  }
+
+  var WORKLOADS = { fib:runFib, sort:runSort, blur:runBlur, mixed:runMixed };
+
+  function profile(name){
+    var p = new Profiler();
+    WORKLOADS[name](p);
+    var arena = p.finish();
+    return { arena:arena, total:p.clock, rootChild: arena[0].children[0] };
+  }
+
+  // ---------- geometry: lay the tree into arcs and flame bars ----------
+  var TAU = Math.PI*2;
+  function layout(state){
+    var arena = state.arena;
+    var arcs = [];
+    var maxDepth = 0;
+    // arcs: start from the single top workload node, filling the full circle.
+    function walk(idx, a0, a1, depth){
+      var node = arena[idx];
+      arcs.push({ idx:idx, node:node, a0:a0, a1:a1, depth:depth });
+      if (depth > maxDepth) maxDepth = depth;
+      var span = a1 - a0;
+      var acc = a0;
+      // children in first-entry order so the ring reads like a story
+      var kids = node.children.slice().sort(function(x,y){ return arena[x].order - arena[y].order; });
+      var childTotal = 0;
+      for (var i=0;i<kids.length;i++) childTotal += arena[kids[i]].total;
+      for (var j=0;j<kids.length;j++){
+        var kt = arena[kids[j]].total;
+        var frac = childTotal>0 ? (kt/node.total) : 0;
+        var w = span * (node.total>0 ? (kt/node.total) : 0);
+        walk(kids[j], acc, acc+w, depth+1);
+        acc += w;
+      }
+    }
+    var top = state.rootChild;
+    walk(top, 0, TAU, 0);
+    state.arcs = arcs;
+    state.maxDepth = maxDepth;
+
+    // flame bars: x range 0..1 by time offset, row = depth
+    var bars = [];
+    function walkFlame(idx, x0, x1, depth){
+      var node = arena[idx];
+      bars.push({ idx:idx, node:node, x0:x0, x1:x1, depth:depth });
+      var span = x1 - x0, acc = x0;
+      var kids = node.children.slice().sort(function(a,b){ return arena[a].order - arena[b].order; });
+      for (var i=0;i<kids.length;i++){
+        var w = span * (node.total>0 ? (arena[kids[i]].total/node.total) : 0);
+        walkFlame(kids[i], acc, acc+w, depth+1);
+        acc += w;
+      }
+    }
+    walkFlame(top, 0, 1, 0);
+    state.bars = bars;
+  }
+
+  // ---------- color: cold (waits on children) to hot (own work) ----------
+  function arcColor(node, alpha){
+    var selfRatio = node.total>0 ? node.self/node.total : 0;
+    // hue 218 (blue) when cold, down to 28 (orange) when hot
+    var hue = 218 - 190*selfRatio;
+    var light = 42 + 20*selfRatio;
+    var sat = 70 + 20*selfRatio;
+    return "hsla("+hue.toFixed(0)+","+sat.toFixed(0)+"%,"+light.toFixed(0)+"%,"+alpha+")";
+  }
+
+  // ---------- canvas + state ----------
+  var canvas = document.getElementById("c");
+  var ctx = canvas.getContext("2d");
+  var DPR = 2, SIZE = 640;
+  canvas.width = SIZE*DPR; canvas.height = SIZE*DPR;
+  ctx.scale(DPR, DPR);
+  var CX = SIZE/2, CY = SIZE/2, R_INNER = 74, R_MAX = 300;
+
+  var state = null;
+  var view = "bloom";
+  var replayT = 1;            // 0..1 fraction of the run revealed
+  var maxSelf = 1;
+  var hotNode = null;
+  var animRAF = null;
+
+  function selectWorkload(name){
+    state = profile(name);
+    layout(state);
+    maxSelf = 1; hotNode = null;
+    for (var i=0;i<state.arena.length;i++){
+      var n = state.arena[i];
+      if (n.self > maxSelf) maxSelf = n.self;
+      if (n.order >= 0 && (hotNode===null || n.self > hotNode.self)) hotNode = n;
+    }
+    updateCenterAndEpitaph();
+    replayT = 1; scrub.value = 1000; scrubT.textContent = "full run";
+    draw();
+  }
+
+  function updateCenterAndEpitaph(){
+    if (!hotNode){ return; }
+    var pct = (100*hotNode.self/state.total).toFixed(1);
+    document.getElementById("center-name").textContent = hotNode.name+"()";
+    document.getElementById("center-sub").textContent = pct+"% self";
+    document.getElementById("epitaph").innerHTML =
+      "This program spent <b>"+pct+"%</b> of its life in <b>"+hotNode.name+"()</b>.";
+  }
+
+  function revealFrac(node){
+    // how much of this node is revealed at the current replay time
+    var T = replayT * state.total;
+    if (node.end <= T) return 1;
+    if (node.start >= T) return 0;
+    var d = node.end - node.start;
+    return d>0 ? (T-node.start)/d : 1;
+  }
+
+  function drawBloom(){
+    var ring = Math.max(14, (R_MAX-R_INNER)/(state.maxDepth+1));
+    // draw deepest last so glow layers read well
+    var arcs = state.arcs.slice().sort(function(a,b){ return a.depth-b.depth; });
+    for (var i=0;i<arcs.length;i++){
+      var arc = arcs[i], node = arc.node;
+      var rf = revealFrac(node);
+      if (rf <= 0) continue;
+      var r0 = R_INNER + arc.depth*ring;
+      var r1 = r0 + ring*0.86;
+      var a0 = -Math.PI/2 + arc.a0;
+      var a1 = -Math.PI/2 + arc.a0 + (arc.a1-arc.a0)*rf;
+      if (a1 - a0 < 0.0008) continue;
+      var selfRatio = node.total>0 ? node.self/node.total : 0;
+      var glow = (node.self/maxSelf);
+      ctx.beginPath();
+      ctx.arc(CX, CY, r1, a0, a1, false);
+      ctx.arc(CX, CY, r0, a1, a0, true);
+      ctx.closePath();
+      ctx.fillStyle = arcColor(node, 0.92);
+      ctx.shadowColor = "hsla("+(28+40*(1-selfRatio)).toFixed(0)+",90%,60%,"+(0.5*glow)+")";
+      ctx.shadowBlur = 26*glow;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      // hairline separators between arcs
+      ctx.lineWidth = 0.6; ctx.strokeStyle = "rgba(6,6,14,0.55)"; ctx.stroke();
+    }
+    // faint core ring
+    ctx.beginPath(); ctx.arc(CX,CY,R_INNER-6,0,TAU); ctx.lineWidth=1; ctx.strokeStyle="rgba(124,92,255,0.25)"; ctx.stroke();
+  }
+
+  function drawFlame(){
+    var rowH = Math.min(30, (SIZE-120)/(state.maxDepth+1));
+    var top = 42, left = 30, wpx = SIZE-60;
+    var T = replayT;
+    for (var i=0;i<state.bars.length;i++){
+      var bar = state.bars[i], node = bar.node;
+      if (bar.x0 >= T) continue;
+      var x0 = left + bar.x0*wpx;
+      var x1 = left + Math.min(bar.x1, T)*wpx;
+      if (x1-x0 < 0.4) continue;
+      var y = top + bar.depth*rowH;
+      ctx.fillStyle = arcColor(node, 0.95);
+      roundRect(x0, y, Math.max(1,x1-x0-1), rowH-2, 3);
+      ctx.fill();
+      if (x1-x0 > 46){
+        ctx.fillStyle = "rgba(255,255,255,0.92)"; ctx.font = "11px "+"ui-monospace,Menlo,monospace";
+        ctx.save(); ctx.beginPath(); ctx.rect(x0,y,x1-x0,rowH); ctx.clip();
+        ctx.fillText(node.name, x0+6, y+rowH/2+3.5); ctx.restore();
+      }
+    }
+  }
+  function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+  function draw(){
+    ctx.clearRect(0,0,SIZE,SIZE);
+    if (view === "bloom") drawBloom(); else drawFlame();
+    document.getElementById("center").style.display = (view==="bloom") ? "block" : "none";
+  }
+
+  // ---------- hover inspection ----------
+  var tip = document.getElementById("tip");
+  function hitBloom(mx,my){
+    var dx = mx-CX, dy = my-CY;
+    var r = Math.hypot(dx,dy);
+    var ring = Math.max(14, (R_MAX-R_INNER)/(state.maxDepth+1));
+    var depth = Math.floor((r-R_INNER)/ring);
+    if (depth < 0) return null;
+    var ang = Math.atan2(dy,dx) + Math.PI/2;       // 0 at top
+    ang = (ang % TAU + TAU) % TAU;
+    for (var i=0;i<state.arcs.length;i++){
+      var a = state.arcs[i];
+      if (a.depth !== depth) continue;
+      if (ang >= a.a0 && ang < a.a1 && revealFrac(a.node) > 0.02) return a.node;
+    }
+    return null;
+  }
+  function hitFlame(mx,my){
+    var rowH = Math.min(30, (SIZE-120)/(state.maxDepth+1));
+    var top=42,left=30,wpx=SIZE-60;
+    var depth = Math.floor((my-top)/rowH);
+    var fx = (mx-left)/wpx;
+    for (var i=0;i<state.bars.length;i++){
+      var b = state.bars[i];
+      if (b.depth===depth && fx>=b.x0 && fx<b.x1) return b.node;
+    }
+    return null;
+  }
+  canvas.addEventListener("mousemove", function(ev){
+    if (!state) return;
+    var rect = canvas.getBoundingClientRect();
+    var mx = (ev.clientX-rect.left) * (SIZE/rect.width);
+    var my = (ev.clientY-rect.top) * (SIZE/rect.height);
+    var node = (view==="bloom") ? hitBloom(mx,my) : hitFlame(mx,my);
+    if (node){
+      var pctT = (100*node.total/state.total).toFixed(1);
+      var pctS = (100*node.self/state.total).toFixed(1);
+      tip.innerHTML = "<b>"+node.name+"()</b><br>calls "+node.calls+
+        "<br>total "+pctT+"%  &middot;  <span class='hot'>self "+pctS+"%</span>";
+      tip.style.opacity = 1;
+      var tx = ev.clientX-rect.left+14, ty = ev.clientY-rect.top+12;
+      tip.style.left = Math.min(tx, rect.width-150)+"px";
+      tip.style.top = ty+"px";
+    } else { tip.style.opacity = 0; }
+  });
+  canvas.addEventListener("mouseleave", function(){ tip.style.opacity = 0; });
+
+  // ---------- replay ----------
+  function playReplay(){
+    if (animRAF) cancelAnimationFrame(animRAF);
+    var startTs = null, DUR = 2400;
+    function frame(ts){
+      if (startTs===null) startTs = ts;
+      var e = Math.min(1, (ts-startTs)/DUR);
+      // ease out
+      replayT = 1 - Math.pow(1-e, 2.2);
+      scrub.value = Math.round(replayT*1000);
+      scrubT.textContent = replayT>=1 ? "full run" : Math.round(replayT*100)+"% of the run";
+      draw();
+      if (e < 1) animRAF = requestAnimationFrame(frame); else { replayT=1; draw(); }
+    }
+    animRAF = requestAnimationFrame(frame);
+  }
+
+  // ---------- wire up controls ----------
+  var scrub = document.getElementById("scrub");
+  var scrubT = document.getElementById("scrub-t");
+  scrub.addEventListener("input", function(){
+    if (animRAF){ cancelAnimationFrame(animRAF); animRAF=null; }
+    replayT = scrub.value/1000;
+    scrubT.textContent = replayT>=1 ? "full run" : Math.round(replayT*100)+"% of the run";
+    draw();
+  });
+  document.getElementById("replay-btn").addEventListener("click", playReplay);
+
+  var wl = document.getElementById("workloads");
+  wl.addEventListener("click", function(ev){
+    var b = ev.target.closest("[data-w]"); if (!b) return;
+    var chips = wl.querySelectorAll(".chip"); for (var i=0;i<chips.length;i++) chips[i].classList.remove("on");
+    b.classList.add("on");
+    selectWorkload(b.getAttribute("data-w"));
+    playReplay();
+  });
+  var vw = document.getElementById("views");
+  vw.addEventListener("click", function(ev){
+    var b = ev.target.closest("[data-v]"); if (!b) return;
+    var chips = vw.querySelectorAll(".chip"); for (var i=0;i<chips.length;i++) chips[i].classList.remove("on");
+    b.classList.add("on");
+    view = b.getAttribute("data-v");
+    draw();
+  });
+
+  // ---------- go ----------
+  selectWorkload("fib");
+  // self-check: self times must sum to the run total (the core invariant)
+  (function(){
+    var sum = 0; for (var i=1;i<state.arena.length;i++) sum += state.arena[i].self;
+    if (Math.abs(sum - state.total) > 1e-6) console.error("self-time invariant broken", sum, state.total);
+    else console.log("self-time invariant holds: sum of self ==", state.total);
+  })();
+  playReplay();
+})();
+</script>
 </body>
 </html>
