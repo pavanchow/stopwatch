@@ -1,5 +1,6 @@
 use crate::clock::Clock;
 use crate::error::ProfilerError;
+use std::collections::HashMap;
 
 /// Hard ceiling on the number of distinct nodes the arena will hold.
 /// Reached only by pathological instrumentation (a name generated per
@@ -31,6 +32,12 @@ pub struct Node {
     pub self_nanos: u64,
     pub parent: Option<usize>,
     pub children: Vec<usize>,
+    /// Child name to arena index, so `find_or_create_child` is O(1)
+    /// instead of a linear scan. Keeping the `children` Vec alongside
+    /// preserves first-seen order for traversal, the map is only for
+    /// lookup. Without this, a workload that generates a unique span
+    /// name per call turns instrumentation into an O(n^2) anchor.
+    child_index: HashMap<String, usize>,
 }
 
 impl Node {
@@ -42,6 +49,7 @@ impl Node {
             self_nanos: 0,
             parent,
             children: Vec::new(),
+            child_index: HashMap::new(),
         }
     }
 }
@@ -145,16 +153,28 @@ impl<C: Clock> Profiler<C> {
         Ok(result)
     }
 
+    /// Like `span`, but for a closure that itself returns a `Result`.
+    /// It flattens the two error layers into one, so a caller writes a
+    /// single `?` instead of the awkward `??` that a plain `span` around
+    /// a fallible closure would force. Any `ProfilerError` from the
+    /// enter/exit is converted into the closure's error type `E`.
+    pub fn try_span<F, T, E>(&mut self, name: &str, f: F) -> Result<T, E>
+    where
+        F: FnOnce(&mut Self) -> Result<T, E>,
+        E: From<ProfilerError>,
+    {
+        self.enter(name)?;
+        let result = f(self);
+        self.exit()?;
+        result
+    }
+
     fn find_or_create_child(
         &mut self,
         parent_idx: usize,
         name: &str,
     ) -> Result<usize, ProfilerError> {
-        if let Some(&existing) = self.nodes[parent_idx]
-            .children
-            .iter()
-            .find(|&&child_idx| self.nodes[child_idx].name == name)
-        {
+        if let Some(&existing) = self.nodes[parent_idx].child_index.get(name) {
             return Ok(existing);
         }
 
@@ -165,6 +185,9 @@ impl<C: Clock> Profiler<C> {
         let new_idx = self.nodes.len();
         self.nodes.push(Node::new(name.to_string(), Some(parent_idx)));
         self.nodes[parent_idx].children.push(new_idx);
+        self.nodes[parent_idx]
+            .child_index
+            .insert(name.to_string(), new_idx);
         Ok(new_idx)
     }
 

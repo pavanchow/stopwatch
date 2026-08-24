@@ -240,3 +240,38 @@ fn exit_without_enter_is_a_typed_error() {
     let mut profiler = Profiler::new(clock);
     assert_eq!(profiler.exit(), Err(ProfilerError::ExitWithoutEnter));
 }
+
+#[test]
+fn flamegraph_folds_stacks_with_self_time() {
+    // a spans 0..100 wrapping b at 20..60, so a.self == 60, b.self == 40.
+    let clock = MockClock::new();
+    let mut profiler = Profiler::new(clock);
+    profiler.enter("a").unwrap();
+    profiler.clock().advance(20);
+    profiler.enter("b").unwrap();
+    profiler.clock().advance(40);
+    profiler.exit().unwrap();
+    profiler.clock().advance(40);
+    profiler.exit().unwrap();
+
+    assert_eq!(profiler.to_flamegraph(), "a 60\na;b 40\n");
+}
+
+#[test]
+fn deep_tree_report_does_not_overflow_the_host_stack() {
+    // Build a tree far deeper than a comfortable recursion limit and
+    // confirm the iterative report and exports return without panicking.
+    let clock = MockClock::new();
+    let mut profiler = Profiler::new(clock);
+    let depth = MAX_DEPTH - 1;
+    for _ in 0..depth {
+        profiler.enter("level").unwrap();
+        profiler.clock().advance(1);
+    }
+    for _ in 0..depth {
+        profiler.exit().unwrap();
+    }
+    assert!(!profiler.text_report().is_empty());
+    assert!(profiler.to_json().starts_with('{'));
+    assert!(!profiler.to_flamegraph().is_empty());
+}

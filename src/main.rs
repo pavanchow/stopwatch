@@ -17,6 +17,9 @@ enum Command {
         /// Print only the JSON call tree, no text report.
         #[arg(long)]
         json: bool,
+        /// Print folded stacks for flamegraph.pl instead of the report.
+        #[arg(long)]
+        flamegraph: bool,
     },
 }
 
@@ -31,11 +34,11 @@ enum Workload {
 fn main() {
     let cli = Cli::parse();
     match cli.command {
-        Command::Run { workload, json } => run_workload(workload, json),
+        Command::Run { workload, json, flamegraph } => run_workload(workload, json, flamegraph),
     }
 }
 
-fn run_workload(workload: Workload, json: bool) {
+fn run_workload(workload: Workload, json: bool, flamegraph: bool) {
     let mut profiler = Profiler::new(SystemClock::new());
 
     let outcome = match workload {
@@ -50,7 +53,9 @@ fn run_workload(workload: Workload, json: bool) {
         std::process::exit(1);
     }
 
-    if json {
+    if flamegraph {
+        print!("{}", profiler.to_flamegraph());
+    } else if json {
         println!("{}", profiler.to_json());
     } else {
         println!("{}", profiler.text_report());

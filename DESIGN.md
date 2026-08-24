@@ -102,3 +102,10 @@ pub struct Epitaph {
 `children` is an array of objects with the same shape, recursively, one entry per child node in arena order. String values are escaped for quotes, backslashes, and control characters. This shape is the contract a separate visualization consumes, so it stays exactly as written here.
 
 By Pavan Nallamothu (pavanchow)
+
+## Performance and robustness notes
+
+- **O(1) child lookup.** Each node keeps a `child_index` map from child name to arena index alongside the ordered `children` vector, so `find_or_create_child` is a hash lookup rather than a linear scan. Without it, instrumentation that generates a unique span name per call would degrade to O(n squared).
+- **Iterative reports.** `text_report`, `to_json`, and `to_flamegraph` walk the tree with an explicit work stack, not recursion, so a very deep call tree costs O(1) host stack instead of one stack frame per level.
+- **`try_span`.** For a closure that returns a `Result`, `try_span` flattens the profiler's error into the closure's error type, so a caller writes a single `?` instead of the `??` a plain `span` around a fallible closure would force.
+- **Folded flamegraph export.** `to_flamegraph` emits Brendan Gregg's folded-stack format, one line per function as `top;child self_nanos`, ready to pipe into `flamegraph.pl`.

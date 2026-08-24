@@ -1,5 +1,5 @@
 use crate::clock::Clock;
-use crate::profiler::{Profiler, ROOT};
+use crate::profiler::{Node, Profiler, ROOT};
 
 /// The function that consumed the most time on its own, the answer to
 /// "where did the program's life actually go."
@@ -46,6 +46,10 @@ impl<C: Clock> Profiler<C> {
 
     /// An indented tree of calls, total(ms), self(ms), and percent of
     /// the root total, heaviest child first at every level.
+    ///
+    /// The traversal is iterative with an explicit work stack, so it
+    /// uses O(1) host stack no matter how deep the profiled call tree
+    /// is. A recursive walk would put one host frame per tree level.
     pub fn text_report(&self) -> String {
         let root_total = self.root_total_nanos();
         let nodes = self.nodes();
@@ -55,10 +59,35 @@ impl<C: Clock> Profiler<C> {
             "name", "calls", "total(ms)", "self(ms)", "pct"
         ));
 
-        let mut children: Vec<usize> = nodes[ROOT].children.clone();
-        sort_by_total(nodes, &mut children);
-        for idx in children {
-            write_text_node(nodes, idx, 0, root_total, &mut out);
+        // Stack of (node index, depth). Children are pushed heaviest-last
+        // so the heaviest pops first, matching a heaviest-first DFS.
+        let mut roots = nodes[ROOT].children.clone();
+        sort_by_total(nodes, &mut roots);
+        let mut stack: Vec<(usize, usize)> = roots.iter().rev().map(|&i| (i, 0)).collect();
+
+        while let Some((idx, depth)) = stack.pop() {
+            let node = &nodes[idx];
+            let indent = "  ".repeat(depth);
+            let label = format!("{indent}{}", node.name);
+            let pct = if root_total > 0 {
+                node.total_nanos as f64 / root_total as f64 * 100.0
+            } else {
+                0.0
+            };
+            out.push_str(&format!(
+                "{:<32}{:>8}{:>12.3}{:>12.3}{:>8.1}%\n",
+                label,
+                node.calls,
+                node.total_nanos as f64 / 1_000_000.0,
+                node.self_nanos as f64 / 1_000_000.0,
+                pct
+            ));
+
+            let mut children = node.children.clone();
+            sort_by_total(nodes, &mut children);
+            for &child in children.iter().rev() {
+                stack.push((child, depth + 1));
+            }
         }
         out
     }
@@ -67,76 +96,76 @@ impl<C: Clock> Profiler<C> {
     /// self_nanos, children }`, rooted at a synthetic top-level object
     /// whose `total_nanos` is the sum of every top-level span, since
     /// the sentinel root is never entered directly.
+    ///
+    /// Serialized iteratively with a work stack of "emit this node" and
+    /// "emit this literal" items, so nesting depth costs no host stack.
     pub fn to_json(&self) -> String {
+        let nodes = self.nodes();
+        let root_total = self.root_total_nanos();
         let mut out = String::new();
-        write_json_node(self.nodes(), ROOT, self.root_total_nanos(), &mut out);
+
+        enum Work<'a> {
+            Node(usize),
+            Lit(&'a str),
+        }
+        let mut stack: Vec<Work> = vec![Work::Node(ROOT)];
+
+        while let Some(item) = stack.pop() {
+            match item {
+                Work::Lit(s) => out.push_str(s),
+                Work::Node(idx) => {
+                    let node = &nodes[idx];
+                    let total_nanos = if idx == ROOT { root_total } else { node.total_nanos };
+                    out.push_str("{\"name\":");
+                    write_json_string(&node.name, &mut out);
+                    out.push_str(&format!(
+                        ",\"calls\":{},\"total_nanos\":{},\"self_nanos\":{},\"children\":[",
+                        node.calls, total_nanos, node.self_nanos
+                    ));
+                    // Close this object after its children.
+                    stack.push(Work::Lit("]}"));
+                    // Push children in reverse, interleaving commas, so
+                    // they emit in arena order as `c0,c1,c2`.
+                    let kids = &node.children;
+                    for (rev_i, &child) in kids.iter().enumerate().rev() {
+                        stack.push(Work::Node(child));
+                        if rev_i > 0 {
+                            stack.push(Work::Lit(","));
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// The profile in Brendan Gregg's folded-stack format: one line per
+    /// function of the form `top;child;grandchild self_nanos`, where the
+    /// number is that frame's self time. Pipe it straight into
+    /// `flamegraph.pl` to get an SVG. Functions with zero self time are
+    /// omitted, as folded format expects.
+    pub fn to_flamegraph(&self) -> String {
+        let nodes = self.nodes();
+        let mut out = String::new();
+        let mut stack: Vec<(usize, String)> = Vec::new();
+        for &child in nodes[ROOT].children.iter().rev() {
+            stack.push((child, nodes[child].name.clone()));
+        }
+        while let Some((idx, path)) = stack.pop() {
+            let node = &nodes[idx];
+            if node.self_nanos > 0 {
+                out.push_str(&format!("{path} {}\n", node.self_nanos));
+            }
+            for &child in node.children.iter().rev() {
+                stack.push((child, format!("{path};{}", nodes[child].name)));
+            }
+        }
         out
     }
 }
 
-fn sort_by_total(nodes: &[crate::profiler::Node], indices: &mut [usize]) {
+fn sort_by_total(nodes: &[Node], indices: &mut [usize]) {
     indices.sort_by(|&a, &b| nodes[b].total_nanos.cmp(&nodes[a].total_nanos));
-}
-
-fn write_text_node(
-    nodes: &[crate::profiler::Node],
-    idx: usize,
-    depth: usize,
-    root_total: u64,
-    out: &mut String,
-) {
-    let node = &nodes[idx];
-    let indent = "  ".repeat(depth);
-    let label = format!("{indent}{}", node.name);
-    let pct = if root_total > 0 {
-        node.total_nanos as f64 / root_total as f64 * 100.0
-    } else {
-        0.0
-    };
-
-    out.push_str(&format!(
-        "{:<32}{:>8}{:>12.3}{:>12.3}{:>8.1}%\n",
-        label,
-        node.calls,
-        node.total_nanos as f64 / 1_000_000.0,
-        node.self_nanos as f64 / 1_000_000.0,
-        pct
-    ));
-
-    let mut children = node.children.clone();
-    sort_by_total(nodes, &mut children);
-    for child_idx in children {
-        write_text_node(nodes, child_idx, depth + 1, root_total, out);
-    }
-}
-
-fn write_json_node(
-    nodes: &[crate::profiler::Node],
-    idx: usize,
-    root_total_override: u64,
-    out: &mut String,
-) {
-    let node = &nodes[idx];
-    let total_nanos = if idx == ROOT {
-        root_total_override
-    } else {
-        node.total_nanos
-    };
-
-    out.push('{');
-    out.push_str("\"name\":");
-    write_json_string(&node.name, out);
-    out.push_str(&format!(
-        ",\"calls\":{},\"total_nanos\":{},\"self_nanos\":{},\"children\":[",
-        node.calls, total_nanos, node.self_nanos
-    ));
-    for (i, &child_idx) in node.children.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        write_json_node(nodes, child_idx, root_total_override, out);
-    }
-    out.push_str("]}");
 }
 
 fn write_json_string(s: &str, out: &mut String) {

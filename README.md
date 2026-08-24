@@ -2,9 +2,9 @@
 
 **A small, from-scratch profiler in Rust that tells you exactly where your program's time went.**
 
-Stopwatch instruments a program with `enter`/`exit` spans (or a `span()` closure), builds a call tree as it runs, and reports total time, self time, and call counts for every function it saw. It is small enough to read start to finish in one sitting, and its timing logic is deterministically testable, because the clock is injected rather than read from the wall.
+Stopwatch instruments a program with `enter`/`exit` spans (or a `span()` closure), builds a call tree as it runs, and reports total time, self time, and call counts for every function it saw. It is a Rust call graph profiler small enough to read start to finish in one sitting, and its timing logic is deterministically testable, because the clock is injected rather than read from the wall.
 
-## A call tree with self time and total time
+## Self time vs total time, explained
 
 Every span becomes a node in an arena-backed call tree. Each node tracks:
 
@@ -24,7 +24,7 @@ pub trait Clock {
 }
 ```
 
-`SystemClock` implements it for real measurements. `MockClock` implements it for tests: it starts at zero and only moves when a test calls `advance(nanos)` or `set(nanos)`. That means the test suite asserts exact nanosecond totals instead of hoping a sleep was long enough or a CI runner wasn't busy. See `DESIGN.md` for the accounting rules that make this possible.
+`SystemClock` implements it for real measurements. `MockClock` implements it for tests: it starts at zero and only moves when a test calls `advance(nanos)` or `set(nanos)`. That makes Stopwatch a deterministic benchmarking tool where the test suite asserts exact nanosecond totals instead of hoping a sleep was long enough or a CI runner wasn't busy. See `DESIGN.md` for the accounting rules that make this possible.
 
 ## Recursion and repeated spans
 
@@ -57,18 +57,22 @@ stopwatch run --workload mixed
 
 # JSON call tree only
 stopwatch run --workload sort --json
+
+# Folded stacks for flamegraph.pl
+stopwatch run --workload sort --flamegraph
 ```
 
-As a library:
+As a library. Use `span` for a closure that returns a plain value, and `try_span` for one that returns a `Result`, which flattens the error so you write one `?` instead of `??`:
 
 ```rust
-use stopwatch::{Profiler, SystemClock};
+use stopwatch::{Profiler, ProfilerError, SystemClock};
 
 let mut profiler = Profiler::new(SystemClock::new());
-profiler.span("work", |p| {
-    p.span("step_one", |_| { /* ... */ }).unwrap();
-    p.span("step_two", |_| { /* ... */ }).unwrap();
-}).unwrap();
+profiler.try_span("work", |p| -> Result<(), ProfilerError> {
+    p.span("step_one", |_| { /* ... */ })?;
+    p.span("step_two", |_| { /* ... */ })?;
+    Ok(())
+})?;
 
 println!("{}", profiler.text_report());
 if let Some(epitaph) = profiler.epitaph() {
@@ -85,6 +89,33 @@ if let Some(epitaph) = profiler.epitaph() {
 ```
 
 This is the exact shape a separate visualization consumes, so it is kept stable.
+
+## A lightweight flamegraph alternative
+
+`to_flamegraph()` (and `stopwatch run --workload sort --flamegraph`) emits Brendan Gregg's folded-stack format, one line per function as `top;child;grandchild self_nanos`. Pipe it straight into `flamegraph.pl` to get an SVG, no perf and no OS-level tooling:
+
+```sh
+stopwatch run --workload sort --flamegraph | flamegraph.pl > sort.svg
+```
+
+## Stopwatch vs perf, flamegraph, and criterion
+
+These are excellent tools solving adjacent problems. Stopwatch fills the gap between them: an embeddable, deterministic call tree.
+
+| | Stopwatch | perf | flamegraph | criterion |
+|---|---|---|---|---|
+| What it is | embeddable call-tree profiler | OS-level sampling profiler | a visualizer for folded stacks | statistical microbenchmarks |
+| Deterministic | yes (injected clock) | no | n/a | no, it is statistical |
+| Platform | any, pure Rust | Linux | any (renders SVG) | any |
+| Call tree with self vs total | yes | via post-processing | shows stacks, not the raw math | no |
+| Embeds in a test suite | yes | no | no | yes, for timing only |
+| Dependencies | one (`clap`), zero for the library | kernel support | Perl script | several crates |
+
+Stopwatch even feeds flamegraph directly through its folded-stack export, so it complements that tool rather than replacing it.
+
+## MCP server for agents
+
+`mcp/` is a Model Context Protocol server exposing a `run_workload` tool that returns the report, the epitaph, or folded flamegraph stacks. It deliberately does not compile or run arbitrary code, profiling your own Rust is done by embedding the crate. See `mcp/README.md`.
 
 ## Testing
 

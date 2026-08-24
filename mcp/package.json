@@ -1,0 +1,25 @@
+{
+  "name": "stopwatch-mcp",
+  "version": "0.1.0",
+  "description": "MCP server that runs Stopwatch profiler workloads and returns the call tree, epitaph, or folded flamegraph stacks",
+  "type": "module",
+  "bin": {
+    "stopwatch-mcp": "index.js"
+  },
+  "files": [
+    "index.js"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "profiler",
+    "flame-graph",
+    "call-tree",
+    "rust"
+  ],
+  "author": "Pavan Nallamothu",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

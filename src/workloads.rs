@@ -34,7 +34,7 @@ impl Lcg {
 /// Naive recursive Fibonacci. Deliberately exponential, so the call
 /// tree shows both deep recursion and a call-count explosion.
 pub fn fib(profiler: &mut Profiler<SystemClock>, n: u64) -> Result<u64, ProfilerError> {
-    profiler.span("fib", |p| -> Result<u64, ProfilerError> {
+    profiler.try_span("fib", |p| -> Result<u64, ProfilerError> {
         if n < 2 {
             Ok(n)
         } else {
@@ -42,7 +42,7 @@ pub fn fib(profiler: &mut Profiler<SystemClock>, n: u64) -> Result<u64, Profiler
             let b = fib(p, n - 2)?;
             Ok(a + b)
         }
-    })?
+    })
 }
 
 fn bubble_sort(profiler: &mut Profiler<SystemClock>, arr: &mut [i32]) -> Result<(), ProfilerError> {
@@ -95,7 +95,7 @@ fn quick_sort_range(
 
 fn quick_sort(profiler: &mut Profiler<SystemClock>, arr: &mut [i32]) -> Result<(), ProfilerError> {
     let hi = arr.len() as isize - 1;
-    profiler.span("quick_sort", |p| quick_sort_range(p, arr, 0, hi))?
+    profiler.try_span("quick_sort", |p| quick_sort_range(p, arr, 0, hi))
 }
 
 fn random_array(len: usize, seed: u64) -> Vec<i32> {
@@ -175,11 +175,11 @@ pub fn blur(profiler: &mut Profiler<SystemClock>) -> Result<Vec<u8>, ProfilerErr
     let height = 128;
     let mut buffer: Vec<u8> = (0..(width * height)).map(|i| (i % 256) as u8).collect();
 
-    profiler.span("blur", |p| -> Result<(), ProfilerError> {
+    profiler.try_span("blur", |p| -> Result<(), ProfilerError> {
         horizontal_pass(p, &mut buffer, width, height, 3)?;
         vertical_pass(p, &mut buffer, width, height, 3)?;
         Ok(())
-    })??;
+    })?;
 
     Ok(buffer)
 }
@@ -187,10 +187,10 @@ pub fn blur(profiler: &mut Profiler<SystemClock>) -> Result<Vec<u8>, ProfilerErr
 /// Runs all three workloads under one top-level span, so the report
 /// shows how they compare side by side.
 pub fn mixed(profiler: &mut Profiler<SystemClock>) -> Result<(), ProfilerError> {
-    profiler.span("mixed", |p| -> Result<(), ProfilerError> {
+    profiler.try_span("mixed", |p| -> Result<(), ProfilerError> {
         fib(p, 20)?;
         sort(p)?;
         blur(p)?;
         Ok(())
-    })?
+    })
 }
