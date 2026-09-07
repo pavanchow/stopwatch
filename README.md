@@ -1,3 +1,5 @@
+<img src="docs/logo.svg" alt="Stopwatch logo" width="96">
+
 # Stopwatch
 
 **A small, from-scratch profiler in Rust that tells you exactly where your program's time went.**

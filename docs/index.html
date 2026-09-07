@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Stopwatch: a profiler in Rust that shows where a program spent its life</title>
+<link rel="icon" type="image/svg+xml" href="logo.svg">
 <meta name="description" content="Stopwatch is a profiler in Rust, built from scratch, with a call tree of self time and total time. It renders a run as a chronomandala, a living bloom of where the time went. Try it live.">
 <meta name="author" content="Pavan Nallamothu (pavanchow)">
 <meta name="keywords" content="profiler in Rust, flame graph, call tree, self time, total time, sampling profiler, chronomandala, from scratch, Pavan Nallamothu, pavanchow">
@@ -114,10 +115,23 @@
   </div></nav>
 
   <div id="demo" class="hero">
+    <img src="logo.svg" alt="Stopwatch logo" width="72" height="72">
     <p class="eyebrow">Rust &middot; from scratch &middot; a call tree you can read</p>
     <h1>See where a program<br>spent its life.</h1>
     <p class="sub">Stopwatch is a profiler. It measures the time inside every function, separates a function's own work from time spent in its children, and blooms the whole run into a chronomandala. Pick a workload and watch the time unfold.</p>
   </div>
+
+  <details style="max-width:940px;margin:26px auto 0;padding:0 28px">
+    <summary style="cursor:pointer;font-weight:600;font-size:15px">How to use this playground</summary>
+    <div style="margin-top:12px;color:#8a8f9c;font-size:15px;line-height:1.6">
+      Pick a workload and watch Stopwatch profile it, blooming the call tree into a chronomandala.
+      <ul style="margin:10px 0 0;padding-left:20px">
+        <li><b>Choose a workload:</b> fib, sort, blur, or mixed - each exercises the profiler with real work, not synthetic sleeps.</li>
+        <li><b>Read the bloom:</b> each ring is one call-tree level and each arc's size is the time spent there, so the widest arcs are the hottest functions.</li>
+        <li><b>The epitaph:</b> below the bloom, Stopwatch names the single function that ate the most self time.</li>
+      </ul>
+    </div>
+  </details>
 
   <div class="stage">
     <div class="mandala-card">
