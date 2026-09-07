@@ -52,6 +52,7 @@
   nav .brand .gem{width:16px;height:16px;transform:rotate(45deg);border-radius:3px;background:conic-gradient(from 45deg,#7c5cff,#ff5c8a,#ffb020,#7c5cff)}
   nav .links{display:flex;gap:26px;align-items:center}
   nav .links a{color:var(--ink);font-size:14.5px}
+  nav .v{color:var(--faint);font-family:var(--mono);font-size:12px}
   @media(max-width:640px){nav .links a:not(.gh){display:none}}
 
   .hero{padding:72px 0 26px;text-align:center}
@@ -103,14 +104,28 @@
   pre .k{color:#ff9ec4}
   footer{padding:64px 0;border-top:1px solid var(--line);text-align:center;color:var(--muted)}
   footer .name{color:var(--ink);font-weight:600}
+  .term{max-width:720px;margin:36px auto 0;background:#0b0b14;border:1px solid #23233a;border-radius:16px;overflow:hidden}
+  .term .tbar{display:flex;gap:7px;padding:12px 16px;border-bottom:1px solid #1c1c30}
+  .term .tbar i{width:11px;height:11px;border-radius:50%;background:#33334f}
+  .term pre{background:transparent;margin:0;border-radius:0;max-width:none;color:#e6e6f2;padding:18px 20px;font-size:12.5px;line-height:1.6}
+  .term .p{color:#7c5cff}
+  .term .h{color:#8a8ab0}
+  .term .hot{color:#ffb020;font-weight:600}
+  .rows{max-width:820px;margin:44px auto 0}
+  .rows .r{display:grid;grid-template-columns:minmax(150px,1fr) 2fr;gap:14px 38px;padding:24px 0;border-top:1px solid var(--line)}
+  .rows .r:first-child{border-top:none}
+  .rows .r b{font-size:18px}.rows .r p{color:var(--muted)}
+  .rows .r code{font-family:var(--mono);font-size:13px;background:var(--panel);padding:1px 5px;border-radius:5px}
+  @media(max-width:640px){.rows .r{grid-template-columns:1fr;gap:6px}}
 </style>
 </head>
 <body>
   <nav><div class="row">
     <div class="brand"><img src="logo.svg" class="brandlogo" alt="" width="22" height="22">Stopwatch</div>
     <div class="links">
-      <a href="#demo">Demo</a><a href="#how">How it works</a><a href="#source">Source</a>
+      <a href="#demo">Demo</a><a href="#how">How it works</a><a href="#differs">Compare</a>
       <a class="gh" href="https://github.com/pavanchow/stopwatch">GitHub</a>
+      <span class="v">v0.1.0</span>
     </div>
   </div></nav>
 
@@ -154,7 +169,7 @@
         <canvas id="c" width="1280" height="1280"></canvas>
         <div class="center-label" id="center">
           <div class="k">hottest</div>
-          <div class="v" id="center-name">&mdash;</div>
+          <div class="v" id="center-name">&nbsp;</div>
           <div class="s" id="center-sub"></div>
         </div>
         <div class="tip" id="tip"></div>
@@ -197,6 +212,41 @@
     <p class="lead">The CLI runs real workloads under the system clock and prints an indented call tree with total time, self time, and percent, then names the line where the program spent most of its life.</p>
     <pre>cargo run -- run --workload sort
 cargo run -- run --workload mixed --json   <span class="c"># the same tree the bloom reads</span></pre>
+    <div class="term">
+      <div class="tbar"><i></i><i></i><i></i></div>
+<pre><span class="p">$</span> stopwatch run --workload sort
+<span class="h">name                               calls   total(ms)    self(ms)      pct</span>
+quick_sort                             1       0.399       0.173    81.1%
+  partition                         2671       0.226       0.226    46.0%
+bubble_sort                            1       0.093       0.093    18.9%
+
+Your program spent <span class="hot">46.0%</span> of its life in <span class="hot">partition()</span>.</pre>
+    </div>
+  </section>
+
+  <section id="differs">
+    <h2>How Stopwatch compares</h2>
+    <p class="lead">perf, flamegraph, and criterion are excellent tools solving adjacent problems. Stopwatch fills the gap between them: an embeddable, deterministic call tree.</p>
+    <div class="rows">
+      <div class="r"><b>perf</b><p>An OS-level sampling profiler, Linux only, and not deterministic. Stopwatch is pure Rust, embeds inside your own code, and its clock is injected so a test can assert exact nanosecond totals.</p></div>
+      <div class="r"><b>flamegraph</b><p>A visualizer for folded stacks. Stopwatch feeds it directly through <code>to_flamegraph()</code>, emitting Brendan Gregg folded-stack format, so it complements that tool rather than replacing it.</p></div>
+      <div class="r"><b>criterion</b><p>Statistical microbenchmarks for timing, not a call tree. Stopwatch gives you a call tree with self time versus total time, and still runs inside a test suite.</p></div>
+      <div class="r"><b>Stopwatch</b><p>An embeddable call-tree profiler with self versus total time, deterministic through an injected clock, one dependency for the CLI and zero for the library.</p></div>
+    </div>
+  </section>
+
+  <section id="surfaces">
+    <h2>Where it runs</h2>
+    <p class="lead">The same profiler, reachable four ways. Every surface reads the same call tree.</p>
+    <div class="rows">
+      <div class="r"><b>CLI</b><p>Run a built-in workload with a text report and epitaph, or <code>--json</code> for the raw tree, or <code>--flamegraph</code> for folded stacks.</p></div>
+      <div class="r"><b>Library</b><p>Wrap work in <code>span</code> for a plain value or <code>try_span</code> for a <code>Result</code>, then read <code>text_report()</code> and <code>epitaph()</code>.</p></div>
+      <div class="r"><b>Deterministic tests</b><p>Inject <code>MockClock</code> instead of <code>SystemClock</code> and the test suite asserts exact nanosecond totals, no flaky sleeps.</p></div>
+      <div class="r"><b>MCP server</b><p>A <code>run_workload</code> tool over the Model Context Protocol returns the report, epitaph, or folded stacks. It never compiles or runs arbitrary code.</p></div>
+    </div>
+    <pre>cargo build --release
+stopwatch run --workload mixed
+stopwatch run --workload sort --flamegraph | flamegraph.pl &gt; sort.svg</pre>
   </section>
 
   <noscript>
