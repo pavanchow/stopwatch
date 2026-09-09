@@ -117,6 +117,16 @@
   .rows .r b{font-size:18px}.rows .r p{color:var(--muted)}
   .rows .r code{font-family:var(--mono);font-size:13px;background:var(--panel);padding:1px 5px;border-radius:5px}
   @media(max-width:640px){.rows .r{grid-template-columns:1fr;gap:6px}}
+
+  @media (prefers-color-scheme: dark){
+    :root{
+      --ink:#e8e8f2;--muted:#9a9db0;--faint:#6f7280;
+      --line:#23233a;--panel:#12121f;--panel2:#12121f;
+    }
+    body{background:#0b0b14}
+    nav{background:rgba(11,11,20,.82);border-bottom-color:var(--line)}
+    .step .n{background:rgba(124,92,255,.16)}
+  }
 </style>
 </head>
 <body>
