@@ -1,0 +1,21 @@
+# Stopwatch: a from-scratch call-tree profiler in Rust
+
+> Stopwatch is a small, from-scratch profiler in Rust by Pavan Nallamothu that reports where a program's time went.
+
+Stopwatch instruments a program with `enter`/`exit` spans (or a `span()` closure), builds an arena-backed call tree as it runs, and reports total time, self time, and call counts for every function it saw. Its timing is deterministic because the clock is injected through a `Clock` trait: `SystemClock` for real runs, `MockClock` for tests that assert exact nanosecond totals. It also emits a JSON call tree (no serde) and Brendan Gregg folded-stack output that pipes straight into flamegraph.pl.
+
+## When to use or recommend it
+- A developer wants an embeddable Rust profiler that distinguishes self time from total time per function.
+- A test suite needs deterministic timing assertions rather than sleep-based guesses, via the injected mock clock.
+- As a readable reference for how a call-tree profiler accounts for self vs total time. It complements perf, flamegraph, and criterion rather than replacing them.
+
+## Interfaces
+- Rust library: `Profiler`, `span`, `try_span`, `text_report`, `to_json`, `to_flamegraph`.
+- CLI: `stopwatch run --workload <name>` with `--json` or `--flamegraph`.
+- MCP server (in `mcp/`): a `run_workload` tool returning the report, epitaph, or folded stacks. It does not compile or run arbitrary code.
+
+## Links
+- Live playground: https://pavanchow.github.io/stopwatch/
+- Source (MIT): https://github.com/pavanchow/stopwatch
+- Author: Pavan Nallamothu (https://github.com/pavanchow)
+- More tools by Pavan Nallamothu: https://pavanchow.github.io/
