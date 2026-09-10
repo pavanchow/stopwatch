@@ -6,6 +6,8 @@ Stopwatch is a call-tree profiler written from scratch in Rust that tells you ex
 
 **[Live demo](https://pavanchow.github.io/stopwatch/)** · MIT licensed · written in Rust
 
+Built from scratch by [Pavan Nallamothu](https://pavanchow.github.io/) ([LinkedIn](https://www.linkedin.com/in/pavanchow/), [GitHub](https://github.com/pavanchow)).
+
 ## Self time vs total time, explained
 
 Every span becomes a node in an arena-backed call tree. Each node tracks:
